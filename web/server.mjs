@@ -16,7 +16,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
-const PORT = parseInt(process.env.PORT || '3001', 10);
+// Settings from Home Assistant's add-on page: EMDX_OPTIONS_FILE names the file
+// the Supervisor writes them to (/data/options.json in the add-on). Those set
+// there take the place of the same settings in the app.
+const ADDON_OPTIONS = (() => {
+  const file = process.env.EMDX_OPTIONS_FILE;
+  if (!file) return null;
+  try { return JSON.parse(fs.readFileSync(file, 'utf-8')); }
+  catch (err) {
+    if (err.code !== 'ENOENT') console.error(`⚠️  Couldn't read the add-on's options (${file}): ${err.message}`);
+    return null;
+  }
+})();
+
+const PORT = parseInt(ADDON_OPTIONS?.port ?? process.env.PORT ?? '3001', 10);
 // Identifies this process, so the address check can tell it reached us
 const SERVER_ID = randomUUID();
 
@@ -53,12 +66,15 @@ class RequestError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
 
-// A route whose thrown errors answer the request (RequestError's status, or 500)
+// A route whose thrown errors answer the request (RequestError's status, or
+// 500). Failed sends and changes are logged as well as answered, so what the
+// app says went wrong is in the log too; a read that can't be answered isn't.
 const handle = (fn) => async (req, res) => {
   try { await fn(req, res); }
   catch (err) {
     if (!(err instanceof RequestError)) console.error(`   ❌ ${req.method} ${req.path}: ${err.message}`);
-    if (!res.headersSent) res.status(err.status ?? 500).json({ error: err.message });
+    else if (req.method !== 'GET') console.log(`   ⚠️  ${req.method} ${req.path}: ${err.message}`);
+    if (!res.headersSent) res.status(err.status ?? 500).json({ error: err.message || 'Something went wrong' });
   }
 };
 
@@ -238,8 +254,34 @@ function getAllDisplayProviders(displayId) {
 
 const APP_SETTINGS_JSON = path.join(DISPLAYS_DIR, 'app-settings.json');
 
-function loadAppSettings() {
+// The app settings Home Assistant's add-on page sets. An option left empty is
+// the web UI's to set; one that isn't valid is logged and left to it too.
+const ADDON_SETTINGS = (() => {
+  const out = {};
+  const o = ADDON_OPTIONS ?? {};
+  const take = (key, option, valid) => {
+    const value = typeof o[option] === 'string' ? o[option].trim() : o[option];
+    if (value === undefined || value === null || value === '') return;
+    if (valid(value)) out[key] = value;
+    else console.error(`⚠️  The add-on option ${option} (${JSON.stringify(value)}) isn't valid, so the app's own setting is used`);
+  };
+  take('serverAddress', 'server_address', v => /^[a-zA-Z0-9.-]+$/.test(v));
+  take('timeZone', 'time_zone', v => { try { new Intl.DateTimeFormat('en', { timeZone: v }); return true; } catch { return false; } });
+  take('defaultProfile', 'default_profile', v => PROFILES.some(p => p.id === v));
+  take('imageFit', 'image_fit', v => ['fit', 'fill', 'stretch'].includes(v));
+  take('imageBackground', 'image_background', v => /^#[0-9a-fA-F]{6}$/.test(v));
+  take('syncClocks', 'sync_clocks', v => typeof v === 'boolean');
+  return out;
+})();
+
+// What the web UI saved
+function loadStoredSettings() {
   return readJson(APP_SETTINGS_JSON, {});
+}
+
+// What applies: the add-on page's settings over the web UI's
+function loadAppSettings() {
+  return { ...loadStoredSettings(), ...ADDON_SETTINGS };
 }
 
 // Wake timers are set from server-local time, so the process runs in the
@@ -1310,6 +1352,9 @@ function appSettingsResponse() {
     imageBackground: background,
     syncClocks: syncClocks !== false,
     port: PORT,
+    // Running as a Home Assistant add-on, and the settings its page sets
+    addon: !!ADDON_OPTIONS,
+    managed: Object.keys(ADDON_SETTINGS),
   };
 }
 
@@ -1332,7 +1377,14 @@ app.get('/api/app-settings', (_req, res) => res.json(appSettingsResponse()));
 // syncClocks? }. An empty serverAddress goes back to detection.
 app.put('/api/app-settings', async (req, res) => {
   const { serverAddress: address, timeZone, defaultProfile, imageFit, imageBackground, syncClocks } = req.body ?? {};
-  const settings = loadAppSettings();
+  const settings = loadStoredSettings();
+
+  // Settings the add-on page sets can only be changed there
+  const locked = Object.keys(req.body ?? {}).filter(key => key in ADDON_SETTINGS);
+  if (locked.length) {
+    const names = { serverAddress: "this computer's IP address", timeZone: 'the time zone', defaultProfile: 'the default profile', imageFit: 'image fit', imageBackground: 'the bar color', syncClocks: 'clock sync' };
+    return res.status(409).json({ error: `Change ${locked.map(k => names[k]).join(' and ')} on the add-on's Configuration tab in Home Assistant` });
+  }
 
   if (address !== undefined) {
     const value = String(address).trim();
@@ -2486,7 +2538,10 @@ app.post('/api/groups/:id/span', upload.single('image'), handle(async (req, res)
 // uploaded piece can be deleted again; the folder's can't. Thumbnails are
 // made on demand and cached on disk.
 
-const GALLERY_DIR = fromEnv('EMDX_GALLERY_DIR', path.join(__dirname, '.gallery'));
+// The add-on's media_folder option names the folder in Home Assistant's media
+const GALLERY_DIR = ADDON_OPTIONS?.media_folder
+  ? path.join(path.dirname(fromEnv('EMDX_GALLERY_DIR', '/media/samsung-emdx')), path.basename(String(ADDON_OPTIONS.media_folder)))
+  : fromEnv('EMDX_GALLERY_DIR', path.join(__dirname, '.gallery'));
 const ARTWORK_DIR = path.join(DISPLAYS_DIR, 'artwork');
 const GALLERY_THUMBS = CACHE_DIR ? path.join(CACHE_DIR, 'thumbs') : path.join(__dirname, '.gallery-thumbs');
 const galleryPart = (s) => typeof s === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(s) && !s.includes('..');
@@ -2912,11 +2967,43 @@ if (fs.existsSync(distPath)) {
   };
   app.get('/', sendIndex);
   app.use(express.static(distPath, { index: false }));
-  app.get('/{*splat}', (req, res) => {
-    if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
-    sendIndex(req, res);
-  });
+  app.get('/{*splat}', (req, res, next) => (req.path.startsWith('/api/') ? next() : sendIndex(req, res)));
 }
+
+// ─── Errors ─────────────────────────────────────────────────────────────────
+// Anything under /api answers in JSON, so the app and scripts can always say
+// what went wrong: Express's own answers are HTML pages, which the app can't
+// read a reason from.
+
+app.use('/api', (req, res) => {
+  if (req.method !== 'GET') console.log(`   ⚠️  ${req.method} ${req.originalUrl}: no such API route`);
+  res.status(404).json({ error: `No such API route: ${req.method} ${req.originalUrl.split('?')[0]}` });
+});
+
+// An upload or body that couldn't be read, before any route saw it
+function requestErrorMessage(err) {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') return 'That image is over 50 MB. Send a smaller one.';
+    if (err.code === 'LIMIT_FILE_COUNT') return 'Too many files at once: 20 at most';
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') return `Unexpected file "${err.field}"`;
+    return err.message;
+  }
+  if (err.type === 'entity.too.large') return 'The request is too large: 40 MB at most';
+  if (err.type === 'entity.parse.failed') return "The request's JSON couldn't be read";
+  if (cutOff(err)) return 'The upload stopped before it finished. Try again.';
+  return err.message || 'Something went wrong';
+}
+const cutOff = (err) => err.type === 'request.aborted' || /Unexpected end of form/i.test(err.message);
+
+app.use((err, req, res, _next) => {
+  const status = err instanceof multer.MulterError ? (err.code === 'LIMIT_FILE_SIZE' ? 413 : 400)
+    : cutOff(err) ? 400
+    : Number.isInteger(err.status ?? err.statusCode) ? (err.status ?? err.statusCode) : 500;
+  const message = requestErrorMessage(err);
+  console.error(`   ❌ ${req.method} ${req.originalUrl.split('?')[0]}: ${message}${message === err.message ? '' : ` (${err.message})`}`);
+  if (res.headersSent) return;
+  res.status(status).json({ error: message });
+});
 
 // After a restart: schedules carry on, and waiting images go out again
 for (const display of loadDisplays()) {
@@ -2935,4 +3022,38 @@ app.listen(PORT, () => {
   console.log(`   Local:   http://localhost:${PORT}`);
   const address = serverAddress(loadDisplays()[0]?.host);
   console.log(`   Network: ${address ? `http://${address}:${PORT}` : 'address not set (Settings in the web UI)'}\n`);
+  const managed = Object.keys(ADDON_SETTINGS);
+  if (managed.length) console.log(`   Set in Home Assistant: ${managed.join(', ')}\n`);
+}).on('error', (err) => {
+  console.error(err.code === 'EADDRINUSE'
+    ? `❌ Port ${PORT} is already in use. ${ADDON_OPTIONS ? "Choose another on the add-on's Configuration tab." : 'Set PORT to another one.'}`
+    : `❌ Couldn't start: ${err.message}`);
+  process.exit(1);
+});
+
+// In Home Assistant the sidebar reaches the app on a port of its own, which
+// the Supervisor picks (ingress_port: 0) and tells the add-on when asked.
+// The app listens there too, so the add-on's own port can be anything.
+async function addonIngressPort() {
+  const token = process.env.SUPERVISOR_TOKEN;
+  if (!ADDON_OPTIONS || !token) return null;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    for (const url of ['http://supervisor/addons/self/info', 'http://supervisor/apps/self/info']) {
+      try {
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5_000) });
+        if (!res.ok) continue;
+        const port = (await res.json())?.data?.ingress_port;
+        if (Number.isInteger(port) && port > 0) return port;
+      } catch { /* not reachable yet */ }
+    }
+    await new Promise(r => setTimeout(r, 3_000));
+  }
+  console.error(`⚠️  Couldn't ask Home Assistant which port the sidebar uses, so the app won't open in the sidebar. It's still at port ${PORT}.`);
+  return null;
+}
+
+addonIngressPort().then(port => {
+  if (!port || port === PORT) return;
+  app.listen(port, () => console.log(`   Sidebar: port ${port}, for Home Assistant\n`))
+    .on('error', err => console.error(`⚠️  The sidebar's port ${port} couldn't be opened: ${err.message}`));
 });

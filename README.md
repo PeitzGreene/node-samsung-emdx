@@ -101,7 +101,7 @@ The app also runs as a Home Assistant add-on, with its web app in the sidebar (*
 2. Install **Samsung EMDX**, start it, and open **E-Paper** in the sidebar.
 3. For displays as entities and actions in automations, add the [integration](docs/HOME-ASSISTANT.md) with the address `http://127.0.0.1:3001`.
 
-The add-on uses the host's network (port 3001), so scanning, Wake-on-LAN and the address displays download from all work without setup. Artwork in `/media/samsung-emdx/<category>/` shows in the library alongside uploads. More in [homeassistant-addon/DOCS.md](homeassistant-addon/DOCS.md). It runs on 64-bit Home Assistant (aarch64 or amd64).
+The add-on uses the host's network, so scanning, Wake-on-LAN and the address displays download from all work without setup. Its **Configuration** tab sets the app's port (3001 unless you change it), the artwork folder, and optionally the address, time zone, default look, image fit, bar color and clock sync; ones set there show as locked in the app. Artwork in `/media/samsung-emdx/<category>/` shows in the library alongside uploads. More in [homeassistant-addon/DOCS.md](homeassistant-addon/DOCS.md). It runs on 64-bit Home Assistant (aarch64 or amd64).
 
 ## Docker
 

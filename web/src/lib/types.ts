@@ -57,6 +57,10 @@ export interface AppSettings {
   /** Set a display's clock to this app's time when it's out */
   syncClocks: boolean
   port: number
+  /** Running as a Home Assistant add-on */
+  addon?: boolean
+  /** Settings the add-on's Configuration tab sets, which can't be changed here */
+  managed?: (keyof AppSettings)[]
 }
 
 export type ImageFit = "fit" | "fill" | "stretch"

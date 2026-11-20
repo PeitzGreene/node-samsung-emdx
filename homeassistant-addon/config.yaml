@@ -1,5 +1,5 @@
 name: Samsung EMDX
-version: "1.1.0"
+version: "1.2.0"
 slug: samsung_emdx
 description: Images, art, schedules and spanned walls for Samsung EMDX color e-paper displays
 url: https://github.com/PeitzGreene/node-samsung-emdx
@@ -9,15 +9,30 @@ arch:
 # The host's network: scanning for displays, Wake-on-LAN, and displays
 # downloading images from this machine's own address
 host_network: true
-# The web app in Home Assistant's sidebar
+# The web app in Home Assistant's sidebar, on a free port Home Assistant picks
+# (0); the app asks the Supervisor which one, so `port` below can be anything
 ingress: true
-ingress_port: 3001
+ingress_port: 0
 ingress_stream: true
+hassio_api: true
 panel_icon: mdi:image-frame
 panel_title: E-Paper
-# Artwork can be dropped in /media/samsung-emdx/<category>/ (Samba, File editor…)
+# Artwork can be dropped in /media/<media_folder>/<category>/ (Samba, File editor…)
 map:
   - type: media
     read_only: true
 backup_exclude:
   - cache/*
+# Left empty, the optional ones are set in the app's own Settings
+options:
+  port: 3001
+  media_folder: samsung-emdx
+schema:
+  port: port
+  media_folder: match(^[A-Za-z0-9][A-Za-z0-9 ._-]*$)
+  server_address: match(^[A-Za-z0-9.-]+$)?
+  time_zone: str?
+  default_profile: list(eink|vivid|bw|none)?
+  image_fit: list(fit|fill|stretch)?
+  image_background: match(^#[0-9a-fA-F]{6}$)?
+  sync_clocks: bool?

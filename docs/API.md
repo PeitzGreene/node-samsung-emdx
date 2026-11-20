@@ -4,7 +4,7 @@ Everything the web app does goes through this API, so scripts, Home Assistant an
 
 Wherever a path has `:display`, use the display's id or its name. Names match in any case, or written as a slug: a display named "Living Room" answers to `living room`, `Living Room` and `living-room`. Groups (`:group`) work the same way. `GET /api/state` lists both, with their slugs.
 
-Errors come back as `{ "error": "…" }` with a 4xx or 5xx status.
+Errors come back as `{ "error": "…" }` with a 4xx or 5xx status, including an upload the server couldn't read (`413` over 50 MB) and a path that isn't part of the API (`404`).
 
 ## Sending images
 

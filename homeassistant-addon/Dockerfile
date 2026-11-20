@@ -14,8 +14,13 @@ LABEL org.opencontainers.image.title="Samsung EMDX add-on" \
 USER root
 
 # /data is kept across updates and included in backups; the cache (thumbnails,
-# the depth model) is left out of backups. Artwork in /media/samsung-emdx
-# shows in the app's library.
+# the depth model) is left out of backups. The add-on page's options are in
+# /data/options.json, artwork in /media/<media_folder>.
 ENV EMDX_DATA_DIR=/data \
     EMDX_CACHE_DIR=/data/cache \
-    EMDX_GALLERY_DIR=/media/samsung-emdx
+    EMDX_GALLERY_DIR=/media/samsung-emdx \
+    EMDX_OPTIONS_FILE=/data/options.json
+
+# The app's port is an option, so the check reads it from there
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "let p=3001;try{p=JSON.parse(require('fs').readFileSync('/data/options.json','utf8')).port||p}catch{}fetch('http://127.0.0.1:'+p+'/api/server-check').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"

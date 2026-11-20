@@ -42,6 +42,10 @@ const timeZoneNames = () => {
   return intl.supportedValuesOf?.("timeZone") ?? []
 }
 
+// A setting set on the add-on's Configuration tab in Home Assistant
+const IN_HOME_ASSISTANT = "Set in Home Assistant, on the add-on's Configuration tab."
+const isManaged = (settings: AppSettings | null, key: keyof AppSettings) => !!settings?.managed?.includes(key)
+
 function PageHeader({ title, description }: { title: string; description: string }) {
   return (
     <div className="border-b border-border px-5 pb-3 pt-4 sm:pr-12">
@@ -90,7 +94,8 @@ function GeneralPage({ settings, onSave }: { settings: AppSettings | null; onSav
           <SettingRow
             stacked
             label="This computer's IP address"
-            hint={settings?.detectedAddress
+            hint={isManaged(settings, "serverAddress") ? `Displays download images from this address. ${IN_HOME_ASSISTANT}`
+              : settings?.detectedAddress
               ? `Displays download images from this address. Leave it blank to use ${settings.detectedAddress}, which was detected automatically.`
               : "Displays download images from this address. It can't be detected in Docker Desktop. On a Mac, run ipconfig getifaddr en0 to find it."}
           >
@@ -101,6 +106,7 @@ function GeneralPage({ settings, onSave }: { settings: AppSettings | null; onSav
                 onChange={e => setAddress(e.target.value)}
                 onBlur={saveAddress}
                 onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur() }}
+                disabled={isManaged(settings, "serverAddress")}
                 placeholder={settings?.detectedAddress ?? addressFromBrowser() ?? "192.168.1.20"}
                 className="h-8 max-w-56 text-xs"
               />
@@ -118,7 +124,11 @@ function GeneralPage({ settings, onSave }: { settings: AppSettings | null; onSav
               </p>
             )}
           </SettingRow>
-          <SettingRow stacked label="Time zone" hint="Used for scheduled wake times and syncing a display's clock.">
+          <SettingRow
+            stacked
+            label="Time zone"
+            hint={`Used for scheduled wake times and syncing a display's clock.${isManaged(settings, "timeZone") ? ` ${IN_HOME_ASSISTANT}` : ""}`}
+          >
             <Input
               aria-label="Time zone"
               list="time-zones"
@@ -126,6 +136,7 @@ function GeneralPage({ settings, onSave }: { settings: AppSettings | null; onSav
               onChange={e => setTimeZone(e.target.value)}
               onBlur={saveZone}
               onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur() }}
+              disabled={isManaged(settings, "timeZone")}
               placeholder="America/New_York"
               className="h-8 max-w-56 text-xs"
             />
@@ -138,6 +149,8 @@ function GeneralPage({ settings, onSave }: { settings: AppSettings | null; onSav
           >
             <Switch
               aria-label="Keep display clocks in sync"
+              disabled={isManaged(settings, "syncClocks")}
+              title={isManaged(settings, "syncClocks") ? IN_HOME_ASSISTANT : undefined}
               checked={settings?.syncClocks ?? true}
               onCheckedChange={on => { onSave({ syncClocks: on }) }}
             />
@@ -163,11 +176,13 @@ function ImagesPage({ settings, onSave }: { settings: AppSettings | null; onSave
           description="How an image is sized to the panel when it hasn't been laid out in the designer: queued images, the library, links and the API. Every image goes out at the panel's exact size."
         >
           <SettingRow label="Fit" hint={
-            fit === "fit" ? "Shows the whole image, with bars where its shape differs from the panel's."
+            (fit === "fit" ? "Shows the whole image, with bars where its shape differs from the panel's."
               : fit === "fill" ? "Covers the whole panel, cropping what doesn't fit."
-                : "Fills the panel exactly, squashing or stretching the image."
+                : "Fills the panel exactly, squashing or stretching the image.")
+            + (isManaged(settings, "imageFit") ? ` ${IN_HOME_ASSISTANT}` : "")
           }>
             <Segmented
+              disabled={isManaged(settings, "imageFit")}
               label="Image fit"
               value={fit}
               onChange={v => { onSave({ imageFit: v }) }}
@@ -179,7 +194,7 @@ function ImagesPage({ settings, onSave }: { settings: AppSettings | null; onSave
             />
           </SettingRow>
           {fit === "fit" && (
-            <SettingRow label="Bars" hint="The panel's own inks show cleanest.">
+            <SettingRow label="Bars" hint={`The panel's own inks show cleanest.${isManaged(settings, "imageBackground") ? ` ${IN_HOME_ASSISTANT}` : ""}`}>
               <div className="flex items-center gap-1" role="radiogroup" aria-label="Bar color">
                 {PANEL_PALETTE.map(c => {
                   const color = hex(c.nominal)
@@ -191,6 +206,7 @@ function ImagesPage({ settings, onSave }: { settings: AppSettings | null; onSave
                       aria-checked={background === color}
                       aria-label={c.name}
                       title={c.name}
+                      disabled={isManaged(settings, "imageBackground")}
                       className={cn("h-6 w-6 rounded-full border border-white/15", background === color && "ring-2 ring-primary ring-offset-2 ring-offset-card")}
                       style={{ background: `rgb(${c.panel.join(",")})` }}
                       onClick={() => { onSave({ imageBackground: color }) }}
@@ -204,7 +220,7 @@ function ImagesPage({ settings, onSave }: { settings: AppSettings | null; onSave
 
         <SettingGroup
           title="Default profile"
-          description="Used for every image that hasn't been given its own look in the designer, including queued images and image feeds."
+          description={`Used for every image that hasn't been given its own look in the designer, including queued images and image feeds.${isManaged(settings, "defaultProfile") ? ` ${IN_HOME_ASSISTANT}` : ""}`}
         >
           <div role="radiogroup" aria-label="Default profile" className="divide-y divide-border">
             {PROFILES.map(p => (
@@ -213,7 +229,8 @@ function ImagesPage({ settings, onSave }: { settings: AppSettings | null; onSave
                 type="button"
                 role="radio"
                 aria-checked={current === p.id}
-                className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-accent/50"
+                disabled={isManaged(settings, "defaultProfile")}
+                className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
                 onClick={() => { if (p.id !== current) onSave({ defaultProfile: p.id }) }}
               >
                 <span className={cn(
