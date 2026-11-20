@@ -4,6 +4,7 @@ import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
 import { ImageDesigner, NumField, Section, type DesignResult, type Wall } from "@/components/ImageDesigner"
 import { withWakeHint } from "@/lib/wakeHint"
+import { readReply } from "@/lib/send"
 import { DEFAULT_GAP, latestGap, nextGroupName, wallLayout } from "@/lib/span"
 import type { DisplayConfig, DisplayGroup, ProfileId, QueueEdit, Scene, SpanGap, SpanResult } from "@/lib/types"
 
@@ -35,8 +36,8 @@ async function postSpan(groupId: string, body: FormData | object): Promise<SpanR
   const res = await fetch(`api/groups/${groupId}/span`, body instanceof FormData
     ? { method: "POST", body }
     : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
-  const data = await res.json().catch(() => ({})) as SpanResponse
-  if (!res.ok) throw new Error(data.error || "Couldn't send")
+  const data = await readReply<SpanResponse>(res)
+  if (!res.ok) throw new Error(data.error)
   return data
 }
 
@@ -108,8 +109,8 @@ export function SpanDesigner({ job, displays, scenes, groups, defaultProfile, on
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim() || nextGroupName(groups), gap, displayIds: job.displayIds }),
       })
-      const saved = await saveRes.json().catch(() => ({})) as DisplayGroup & { error?: string }
-      if (!saveRes.ok) throw new Error(saved.error || "Couldn't save the group")
+      const saved = await readReply<DisplayGroup>(saveRes)
+      if (!saveRes.ok) throw new Error(`Couldn't save the group. ${saved.error}`)
 
       const layout = { width: plan.width, height: plan.height, screens: plan.screens }
       let body: FormData | object = { edit, layout }

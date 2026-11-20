@@ -66,12 +66,15 @@ class RequestError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
 
-// A route whose thrown errors answer the request (RequestError's status, or 500)
+// A route whose thrown errors answer the request (RequestError's status, or
+// 500). Failed sends and changes are logged as well as answered, so what the
+// app says went wrong is in the log too; a read that can't be answered isn't.
 const handle = (fn) => async (req, res) => {
   try { await fn(req, res); }
   catch (err) {
     if (!(err instanceof RequestError)) console.error(`   ❌ ${req.method} ${req.path}: ${err.message}`);
-    if (!res.headersSent) res.status(err.status ?? 500).json({ error: err.message });
+    else if (req.method !== 'GET') console.log(`   ⚠️  ${req.method} ${req.path}: ${err.message}`);
+    if (!res.headersSent) res.status(err.status ?? 500).json({ error: err.message || 'Something went wrong' });
   }
 };
 
@@ -2964,11 +2967,43 @@ if (fs.existsSync(distPath)) {
   };
   app.get('/', sendIndex);
   app.use(express.static(distPath, { index: false }));
-  app.get('/{*splat}', (req, res) => {
-    if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
-    sendIndex(req, res);
-  });
+  app.get('/{*splat}', (req, res, next) => (req.path.startsWith('/api/') ? next() : sendIndex(req, res)));
 }
+
+// ─── Errors ─────────────────────────────────────────────────────────────────
+// Anything under /api answers in JSON, so the app and scripts can always say
+// what went wrong: Express's own answers are HTML pages, which the app can't
+// read a reason from.
+
+app.use('/api', (req, res) => {
+  if (req.method !== 'GET') console.log(`   ⚠️  ${req.method} ${req.originalUrl}: no such API route`);
+  res.status(404).json({ error: `No such API route: ${req.method} ${req.originalUrl.split('?')[0]}` });
+});
+
+// An upload or body that couldn't be read, before any route saw it
+function requestErrorMessage(err) {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') return 'That image is over 50 MB. Send a smaller one.';
+    if (err.code === 'LIMIT_FILE_COUNT') return 'Too many files at once: 20 at most';
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') return `Unexpected file "${err.field}"`;
+    return err.message;
+  }
+  if (err.type === 'entity.too.large') return 'The request is too large: 40 MB at most';
+  if (err.type === 'entity.parse.failed') return "The request's JSON couldn't be read";
+  if (cutOff(err)) return 'The upload stopped before it finished. Try again.';
+  return err.message || 'Something went wrong';
+}
+const cutOff = (err) => err.type === 'request.aborted' || /Unexpected end of form/i.test(err.message);
+
+app.use((err, req, res, _next) => {
+  const status = err instanceof multer.MulterError ? (err.code === 'LIMIT_FILE_SIZE' ? 413 : 400)
+    : cutOff(err) ? 400
+    : Number.isInteger(err.status ?? err.statusCode) ? (err.status ?? err.statusCode) : 500;
+  const message = requestErrorMessage(err);
+  console.error(`   ❌ ${req.method} ${req.originalUrl.split('?')[0]}: ${message}${message === err.message ? '' : ` (${err.message})`}`);
+  if (res.headersSent) return;
+  res.status(status).json({ error: message });
+});
 
 // After a restart: schedules carry on, and waiting images go out again
 for (const display of loadDisplays()) {
