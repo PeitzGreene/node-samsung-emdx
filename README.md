@@ -142,7 +142,7 @@ The app finds these through environment variables, which the add-on uses to keep
 | `EMDX_CACHE_DIR` | thumbnails in `web/.gallery-thumbs`, the model in `node_modules` | Thumbnails (`thumbs/`) and the depth model (`models/`) |
 | `PORT` | `3001` | |
 
-**Releasing:** set the version in `homeassistant-addon/config.yaml` and `build.yaml`, then push a tag such as `v1.1.0`. The workflow publishes the image for that version, which the add-on builds on. Make the package public on GitHub once, so Home Assistant can pull it.
+**Releasing:** set `version` in `homeassistant-addon/config.yaml`, then push the matching tag (version `1.1.0` → tag `v1.1.0`). The workflow publishes the image for that version, and the add-on runs the image of its own version. Make the package public on GitHub once, so Home Assistant can pull it.
 
 **CLI in the container:**
 

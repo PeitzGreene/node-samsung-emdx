@@ -1,7 +1,14 @@
-# The Home Assistant add-on: the app's own image (BUILD_FROM, see build.yaml),
-# with its data where an add-on keeps it.
-ARG BUILD_FROM
-FROM ${BUILD_FROM}
+# The Home Assistant add-on: the app's own image, with its data where an
+# add-on keeps it. Home Assistant passes the add-on's version (config.yaml)
+# as BUILD_VERSION, so the add-on runs the app image published for that
+# version (.github/workflows/image.yml publishes one per tag). EMDX_IMAGE
+# lets a local test build use another image.
+ARG BUILD_VERSION=latest
+ARG EMDX_IMAGE=ghcr.io/peitzgreene/node-samsung-emdx
+FROM ${EMDX_IMAGE}:${BUILD_VERSION}
+
+LABEL org.opencontainers.image.title="Samsung EMDX add-on" \
+      org.opencontainers.image.source="https://github.com/PeitzGreene/node-samsung-emdx"
 
 # Add-on storage (/data, /media) belongs to root
 USER root
