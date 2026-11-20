@@ -1,0 +1,43 @@
+configuration:
+  port:
+    name: Port
+    description: >-
+      The app's port on this machine: the address for a browser, the
+      Samsung EMDX integration (http://127.0.0.1:<port>) and the displays
+      downloading images. Change it if another app uses 3001. The sidebar
+      works whatever it is.
+  media_folder:
+    name: Artwork folder
+    description: >-
+      A folder in Home Assistant's media whose subfolders show in the app's
+      library, one category each: /media/<this folder>/<category>/.
+  server_address:
+    name: This machine's IP address
+    description: >-
+      The address displays download images from. Leave empty to detect it,
+      or to set it in the app.
+  time_zone:
+    name: Time zone
+    description: >-
+      For scheduled wake times and display clocks, such as America/New_York.
+      Leave empty to set it in the app.
+  default_profile:
+    name: Default look
+    description: >-
+      The tone given to images without one of their own: eink, vivid, bw
+      (black and white) or none. Leave empty to choose in the app.
+  image_fit:
+    name: Image fit
+    description: >-
+      How images without a layout are sized to the panel: fit (all of it,
+      with bars), fill (cropped) or stretch. Leave empty to choose in the app.
+  image_background:
+    name: Bar color
+    description: >-
+      The color of the bars around a fitted image, like #000000. Leave empty
+      to choose in the app.
+  sync_clocks:
+    name: Keep display clocks in sync
+    description: >-
+      Set a display's clock to this machine's time when it's more than a
+      minute out. Leave empty to choose in the app.

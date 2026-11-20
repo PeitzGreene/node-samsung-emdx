@@ -2,7 +2,7 @@
 
 The **Samsung EMDX** integration brings the app's displays into Home Assistant: battery, whether each display is awake, what it shows and what's waiting to go to it, with buttons, a schedule switch and actions to send images. It talks to the app's [HTTP API](API.md), so the app does the work of reaching the displays and Home Assistant never needs their PINs.
 
-It needs the app running somewhere Home Assistant can reach, and Home Assistant 2025.8 or newer. The simplest is the **Samsung EMDX add-on**, which runs the app inside Home Assistant (see the README). Then the app's address is `http://127.0.0.1:3001`. The app can just as well run on another computer, in Docker or on its own.
+It needs the app running somewhere Home Assistant can reach, and Home Assistant 2025.8 or newer. The simplest is the **Samsung EMDX add-on**, which runs the app inside Home Assistant (see the README). Then the app's address is `http://127.0.0.1:3001`, or the port you set on the add-on's Configuration tab. The app can just as well run on another computer, in Docker or on its own.
 
 ## Install
 
