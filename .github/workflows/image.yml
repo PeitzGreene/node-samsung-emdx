@@ -5,9 +5,10 @@
 #   main         → ghcr.io/peitzgreene/node-samsung-emdx:latest
 #   tag v1.2.3   → ghcr.io/peitzgreene/node-samsung-emdx:1.2.3 (and 1.2)
 #
-# For a release, set the same version in homeassistant-addon/config.yaml and
-# build.yaml, then push a tag like v1.2.3. Make the package public once (its
-# settings on GitHub) so Home Assistant can pull it without signing in.
+# For a release, set `version` in homeassistant-addon/config.yaml, then push
+# the matching tag (version 1.2.3 → tag v1.2.3): the add-on runs the image of
+# its own version. Make the package public once (its settings on GitHub) so
+# Home Assistant can pull it without signing in.
 name: Image
 
 on:
