@@ -12,6 +12,7 @@ import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { RotationCalibration } from "@/components/RotationCalibration"
 import { displayOrientation, displayState, type Orientation } from "@/lib/displayState"
+import { readReply } from "@/lib/send"
 import { WALLPAPER_COLORS, type DeviceSettings, type DisplayConfig, type DisplayStatus } from "@/lib/types"
 
 // What Samsung's app sends; the display reports "Null" before one is set
@@ -117,6 +118,7 @@ export function DisplaySettings({ display, status, onPatchDisplay, onOrientation
   const [removeOpen, setRemoveOpen] = useState(false)
   const [removing, setRemoving] = useState(false)
   const [waking, setWaking] = useState(false)
+  const [turning, setTurning] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -225,6 +227,30 @@ export function DisplaySettings({ display, status, onPatchDisplay, onOrientation
   }
 
   const saveField = (patch: Partial<DisplayConfig>) => onPatchDisplay(display.id, patch)
+
+  /** Turns everything sent to it around, and sends the image it shows again that way */
+  const upRotation = display.upRotation ?? 0
+  const turnOver = async () => {
+    setTurning(true)
+    try {
+      const res = await fetch(api, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ upRotation: (upRotation + 180) % 360 }),
+      })
+      const saved = await readReply<DisplayConfig>(res)
+      if (!res.ok) throw new Error(saved.error)
+      onDisplayUpdated()
+      const sent = await fetch(`${api}/resend`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wait: false }),
+      })
+      const reply = await readReply<{ message?: string }>(sent)
+      if (sent.ok) toast.success("Turned around. The current image goes out again that way.")
+      else if (sent.status === 404) toast.success("Turned around. Images go out that way from now on.")
+      else toast.info("Turned around, but the current image wasn't sent again", { description: reply.error })
+    } catch (err) {
+      toast.error(`Couldn't turn it around: ${err instanceof Error ? err.message : "Unknown error"}`)
+    } finally { setTurning(false) }
+  }
   const awake = displayState(status) === "awake"
 
   /** Stands in for the settings stored on the display while they can't be read */
@@ -301,6 +327,22 @@ export function DisplaySettings({ display, status, onPatchDisplay, onOrientation
                   options={[{ value: "landscape", label: "Landscape" }, { value: "portrait", label: "Portrait" }]}
                   onChange={orientation => onOrientationChange(display, orientation)}
                 />
+              </SettingRow>
+              <SettingRow
+                label="Upside down"
+                hint={display.upLocked
+                  ? "For a display hung the other way up. Turn off Lock rotation below to change it."
+                  : "For a display hung the other way up: turns every image sent to it around by 180°."}
+              >
+                <span className="flex items-center gap-2">
+                  {turning && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" aria-label="Saving" />}
+                  <Switch
+                    aria-label="Upside down"
+                    checked={upRotation >= 180}
+                    disabled={turning || !!display.upLocked}
+                    onCheckedChange={turnOver}
+                  />
+                </span>
               </SettingRow>
               {settings && (
                 <>

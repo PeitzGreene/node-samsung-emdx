@@ -55,7 +55,7 @@ function GroupThumb({ group }: { group: DisplayGroup }) {
   return (
     <div className="h-10 w-10 shrink-0 rounded-md border border-border bg-muted/40 overflow-hidden flex items-center justify-center">
       {group.span && !err ? (
-        <img src={`api/groups/${group.id}/source?t=${ts}`} alt="" draggable={false} className="h-full w-full object-cover" onError={() => setErr(true)} />
+        <img src={`api/groups/${group.id}/source?t=${ts}`} alt="" draggable={false} className="see-through h-full w-full object-cover" onError={() => setErr(true)} />
       ) : (
         <Columns3 className="h-4 w-4 text-muted-foreground/50" />
       )}

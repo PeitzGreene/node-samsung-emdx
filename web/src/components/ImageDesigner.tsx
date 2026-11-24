@@ -178,10 +178,12 @@ function drawArt(c: CanvasRenderingContext2D, src: CanvasImageSource, d: Design)
 }
 
 /** Each profile on this image, as the panel would show it */
-function profileThumbs(source: HTMLCanvasElement) {
+function profileThumbs(source: HTMLCanvasElement, bg: string) {
   const W = 144, H = 176
   const c = makeCanvas(W, H)
   const ctx = c.getContext("2d", { willReadFrequently: true })!
+  ctx.fillStyle = bg
+  ctx.fillRect(0, 0, W, H)
   const s = Math.max(W / source.width, H / source.height)
   ctx.drawImage(source, (W - source.width * s) / 2, (H - source.height * s) / 2, source.width * s, source.height * s)
   const base = ctx.getImageData(0, 0, W, H)
@@ -194,6 +196,12 @@ function profileThumbs(source: HTMLCanvasElement) {
     thumbs[p.id] = c.toDataURL("image/png")
   }
   return thumbs
+}
+
+/** Whether any of it is see-through, not just solid with an alpha channel */
+function isTransparent({ data }: ImageData) {
+  for (let i = 3; i < data.length; i += 4) if (data[i] < 250) return true
+  return false
 }
 
 export function Section({ title, aside, children }: { title: string; aside?: React.ReactNode; children: React.ReactNode }) {
@@ -325,6 +333,7 @@ export function ImageDesigner({
   const [guides, setGuides] = useState<{ x?: number; y?: number }>({})
   const [thumbs, setThumbs] = useState<Partial<Record<ProfileId, string>>>({})
   const [natural, setNatural] = useState({ w: 1, h: 1 })
+  const [transparent, setTransparent] = useState(false)
   // The design as it opened, to tell whether there's anything to lose
   const [startKey, setStartKey] = useState("")
 
@@ -361,7 +370,11 @@ export function ImageDesigner({
       originalRef.current = original
       tonedRef.current = makeCanvas(original.width, original.height)
       tonedKeyRef.current = ""
-      setThumbs(profileThumbs(original))
+      // With no background chosen yet, a see-through image opens on paper white
+      const seeThrough = isTransparent(baseRef.current)
+      const bg = initial?.bg ?? (seeThrough ? "#ffffff" : design.bg)
+      setTransparent(seeThrough)
+      setThumbs(profileThumbs(original, bg))
       setNatural({ w: img.width, h: img.height })
 
       let xf: Xform
@@ -380,7 +393,7 @@ export function ImageDesigner({
           : Math.min(DW / img.width, DH / img.height)
         xf = { cx: DW / 2, cy: DH / 2, w: img.width * s, h: img.height * s, rot: 0 }
       }
-      const start = { ...design, xf }
+      const start = { ...design, xf, bg }
       setDesign(start)
       setStartKey(JSON.stringify(start))
       setLoadState("ready")
@@ -778,6 +791,8 @@ export function ImageDesigner({
     const u = local.x / design.xf.w + 0.5, v = local.y / design.xf.h + 0.5
     if (u < 0 || u > 1 || v < 0 || v > 1) return
     const i = (Math.min(base.height - 1, Math.floor(v * base.height)) * base.width + Math.min(base.width - 1, Math.floor(u * base.width))) * 4
+    // Nothing to pick where the background already shows through
+    if (base.data[i + 3] < 128) return
     patch({ bg: hex([base.data[i], base.data[i + 1], base.data[i + 2]]) })
     setSampling(false)
   }
@@ -1218,6 +1233,7 @@ export function ImageDesigner({
                 </div>
               </div>
               <PanelSwatches label="Background" value={design.bg} onChange={bg => patch({ bg })} />
+              {transparent && <p className="text-xs leading-relaxed text-muted-foreground">Shows through the image's transparent parts.</p>}
             </div>
 
             <div>

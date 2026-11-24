@@ -42,6 +42,21 @@ The add-on runs the app. The **Samsung EMDX** integration brings its displays in
 http://127.0.0.1:3001
 ```
 
+## Behind a reverse proxy
+
+If you reach Home Assistant through nginx (the **NGINX Home Assistant SSL proxy** add-on, Nginx Proxy Manager and the like), sending an image from the sidebar fails with **Couldn't send: HTTP 413**. The image is uploaded through the proxy, and nginx turns away anything over 1 MB unless told otherwise. Raise its limit to the app's own, 50 MB:
+
+- **NGINX Home Assistant SSL proxy add-on**: on its **Configuration** tab, set `customize` → `active: true` (leave `default` as `nginx_proxy_default*.conf`). Create `/share/nginx_proxy_default.conf` (with the File editor or Samba) containing:
+
+  ```nginx
+  client_max_body_size 50M;
+  ```
+
+  Then restart the NGINX add-on.
+- **Nginx Proxy Manager**: put `client_max_body_size 50M;` in the proxy host's **Advanced** tab.
+
+Opening Home Assistant by its local address (`http://homeassistant.local:8123`) goes around the proxy, so sending works there either way.
+
 ## Data and backups
 
 Displays, queues, groups, schedules and uploaded artwork live in the add-on's data and are included in Home Assistant backups. Thumbnails and the depth model used for room photos are a cache that's left out of backups and made again when needed.

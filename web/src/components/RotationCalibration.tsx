@@ -60,7 +60,7 @@ export function RotationCalibration({ display, onLockChange, onChanged }: Rotati
   }
 
   return (
-    <SettingGroup title="Which way is up" description="Images look upside down or sideways? Send a test arrow and tell the app where it points.">
+    <SettingGroup title="Which way is up" description="Images look sideways, or you're not sure which way is up? Send a test arrow and tell the app where it points.">
       {step === "awaiting" ? (
         <div className="space-y-3 p-3.5">
           <p className="text-[13px]">Which way does the arrow point on your display?</p>

@@ -1,5 +1,5 @@
 name: Samsung EMDX
-version: "1.2.0"
+version: "1.3.0"
 slug: samsung_emdx
 description: Images, art, schedules and spanned walls for Samsung EMDX color e-paper displays
 url: https://github.com/PeitzGreene/node-samsung-emdx

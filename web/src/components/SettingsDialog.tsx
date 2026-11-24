@@ -194,7 +194,7 @@ function ImagesPage({ settings, onSave }: { settings: AppSettings | null; onSave
             />
           </SettingRow>
           {fit === "fit" && (
-            <SettingRow label="Bars" hint={`The panel's own inks show cleanest.${isManaged(settings, "imageBackground") ? ` ${IN_HOME_ASSISTANT}` : ""}`}>
+            <SettingRow label="Bars" hint={`The panel's own inks show cleanest. Also used behind transparent images, which get white until you pick a color here.${isManaged(settings, "imageBackground") ? ` ${IN_HOME_ASSISTANT}` : ""}`}>
               <div className="flex items-center gap-1" role="radiogroup" aria-label="Bar color">
                 {PANEL_PALETTE.map(c => {
                   const color = hex(c.nominal)

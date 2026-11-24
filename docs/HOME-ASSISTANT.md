@@ -64,7 +64,7 @@ Sends an image to one or more displays. Target the display devices, or any entit
 | `path` | | A file Home Assistant can read, such as `/config/www/art.jpg`, uploaded to the app. It must be in `/config/www`, the media folder, or a folder in [`allowlist_external_dirs`](https://www.home-assistant.io/integrations/homeassistant/#allowlist_external_dirs). A relative path is taken from the config folder. |
 | `gallery` | | An item from the app's library, as `category/file.jpg`. |
 | `fit` | optional | `fit` (all of it, with bars), `fill` (cover, cropping) or `stretch`. Default: the app's setting. |
-| `background` | optional | Bar color for `fit`, like `#ffffff`. |
+| `background` | optional | Bar color for `fit`, and the color behind a transparent image, like `#ffffff`. |
 | `profile` | optional | `eink`, `vivid`, `bw` or `none`. |
 | `wait` | optional | `true` (default) waits for the first attempt to send it. `false` answers at once. |
 
@@ -229,6 +229,7 @@ automation:
 - **Can't connect when adding it**: open the address from the Home Assistant machine (for example `curl http://192.168.1.20:3001/api/state`). From Docker, use the host's network address.
 - **"Couldn't download the image"**: the app couldn't fetch the `url`. Make sure it's reachable from the computer running the app, or send the file with `path` instead.
 - **"Home Assistant isn't allowed to read …"**: put the file in `/config/www` or the media folder, or add its folder to `allowlist_external_dirs`.
+- **"Couldn't send: HTTP 413"** in the sidebar: a reverse proxy in front of Home Assistant (nginx) refuses uploads over 1 MB. Raise its limit as in [Behind a reverse proxy](../README.md#behind-a-reverse-proxy).
 - **An image stays waiting**: a display in deep sleep can't be woken over the network. It gets the image when it next wakes (its power button or its own wake timer). Network standby with a MAC address lets the app wake it.
 - To see what the integration does, add this to `configuration.yaml`:
 
