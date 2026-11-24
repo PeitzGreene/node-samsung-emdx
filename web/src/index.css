@@ -124,6 +124,9 @@
   .range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px hsl(var(--ring) / 0.45); }
   .range:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px hsl(var(--ring) / 0.45); }
 
+  /* A light checkerboard behind artwork thumbnails, seen only where they're transparent */
+  .see-through { background: repeating-conic-gradient(#d9d7d1 0% 25%, #f6f5f1 0% 50%) 0 0 / 12px 12px; }
+
   /* Slim scrollbars inside panels */
   .scroll-thin { scrollbar-width: thin; scrollbar-color: hsl(var(--input)) transparent; }
 }

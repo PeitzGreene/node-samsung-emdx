@@ -440,7 +440,7 @@ export function QueuePanel({ open, display, status, defaultProfile, onDisplayUpd
               >
                 <GripVertical className="h-4 w-4 text-muted-foreground/0 group-hover:text-muted-foreground/60 cursor-grab shrink-0 transition-colors" />
                 <img src={thumbUrl(img)} alt="" loading="lazy"
-                  className="h-12 w-12 rounded-md object-cover shrink-0 border border-border cursor-pointer hover:ring-2 hover:ring-primary/50"
+                  className="see-through h-12 w-12 rounded-md object-cover shrink-0 border border-border cursor-pointer hover:ring-2 hover:ring-primary/50"
                   title="Open in the image designer"
                   onClick={() => setEditImg(img)} />
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setEditImg(img)}>
@@ -480,7 +480,7 @@ export function QueuePanel({ open, display, status, defaultProfile, onDisplayUpd
                 onClick={() => setEditImg(img)}
               >
                 <img src={thumbUrl(img)} alt="" loading="lazy" draggable={false}
-                  className="absolute inset-0 h-full w-full object-cover" />
+                  className="see-through absolute inset-0 h-full w-full object-cover" />
                 {idx <= 1 && (
                   <span className={`absolute top-1 left-1 rounded px-1 py-px text-[9px] font-semibold ${
                     idx === 0 ? "bg-primary text-primary-foreground" : "bg-background/80 text-foreground"

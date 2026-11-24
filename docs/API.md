@@ -37,7 +37,7 @@ Options, all optional, for this and every other send:
 | Option | | Default |
 | --- | --- | --- |
 | `fit` | How the image is sized to the panel: `fit` (all of it, with bars), `fill` (cover, cropping) or `stretch` | Settings → Image fit |
-| `background` | Bar color for `fit`, like `#ffffff` | Settings |
+| `background` | The color of the bars for `fit`, and behind a transparent image, like `#ffffff` | Settings, else black bars and white behind a transparent image |
 | `profile` | Tone: `eink`, `vivid`, `bw` or `none` | Settings → Default profile |
 | `sleepAfter` | Minutes the display stays awake afterwards (0 keeps it awake) | The display's own setting |
 | `sleepMode` | Then sleep as `manual`, `scheduled` (arms its wake timer) or `deep` | Follows its mode |
@@ -59,6 +59,10 @@ curl -X POST http://localhost:3001/api/displays/living-room/push -F image=@art.p
 Sends the next image in the display's queue. The queue moves on straight away, even if the display can't be reached yet. Takes the send options above.
 
 `POST /api/displays/:display/queue/:imageId/push` sends a particular queued image, and the queue carries on from it.
+
+### `POST /api/displays/:display/resend`
+
+Sends the image the display shows once more, as it was laid out: after turning it the other way up, for example. It never replaces a newer image that's waiting, which goes out the way the display is set by then. `404` when nothing has been sent to it yet. Takes `wait`, `sleepAfter` and `sleepMode`.
 
 ### `POST /api/displays/:display/providers/apply`
 
@@ -151,6 +155,7 @@ Other status endpoints:
 | `POST /api/displays/:display/sleep` | Puts it to sleep. `{ "sleepMode": "manual" }` or `"scheduled"` |
 | `POST /api/displays/:display/sleep/force` | Deep sleep: only its button or wake timer brings it back |
 | `GET /api/displays/:display/settings` | Settings stored on the display (orientation, sleep, clock, time zone…) |
+| `PUT /api/displays/:display` with `{ "upRotation": 180 }` | For a display hung upside down: turns every image sent to it around (0, 90, 180 or 270). `resend` sends the current one that way |
 | `PUT /api/displays/:display/settings` | Changes them, for example `{ "orientation": "landscape" }` |
 
 ## Clock

@@ -874,23 +874,63 @@ function toneFor(edit) {
 
 // How an image with no layout of its own is sized to the panel: 'fit' shows
 // all of it, with bars of `background` around it; 'fill' covers the panel and
-// crops what's over; 'stretch' fills it ignoring proportions
+// crops what's over; 'stretch' fills it ignoring proportions. The background
+// also shows through a see-through image; with none set that's white, as on
+// paper, where bars around a solid one are black.
 const FITS = ['fit', 'fill', 'stretch'];
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
-function fitFor({ fit, background } = {}) {
+function fitFor({ fit, background } = {}, transparent = false) {
   const settings = loadAppSettings();
   return {
     fit: FITS.includes(fit) ? fit : FITS.includes(settings.imageFit) ? settings.imageFit : 'fit',
-    background: HEX_COLOR.test(background ?? '') ? background : HEX_COLOR.test(settings.imageBackground ?? '') ? settings.imageBackground : '#000000',
+    background: HEX_COLOR.test(background ?? '') ? background : HEX_COLOR.test(settings.imageBackground ?? '') ? settings.imageBackground : transparent ? '#ffffff' : '#000000',
   };
 }
 
-// An image as it comes in (any format, rotated by its EXIF), as a JPEG in its
-// own orientation. Overly large ones are brought down to a sensible size.
+// Whether an image really has see-through parts. An alpha channel that's solid
+// everywhere doesn't count.
+async function isTransparent(image) {
+  const { hasAlpha } = await sharp(image).metadata();
+  return !!hasAlpha && !(await sharp(image).stats()).isOpaque;
+}
+
+// An image as it comes in (any format, rotated by its EXIF), in its own
+// orientation. Overly large ones are brought down to a sensible size. One with
+// see-through parts keeps them, and a PNG or GIF stays lossless so its edges
+// stay crisp; anything else, or too big to keep that way, is a JPEG (or a WebP
+// when it's see-through).
+const LOSSLESS_MAX_PIXELS = 16e6;
+const LOSSLESS_MAX_BYTES = 10 * 1024 * 1024;
 async function normalizeImage(buffer, { maxSide = 8192 } = {}) {
-  return sharp(buffer).rotate()
-    .resize(maxSide, maxSide, { fit: 'inside', withoutEnlargement: true })
-    .jpeg({ quality: 92 }).toBuffer();
+  const sized = () => sharp(buffer).rotate().resize(maxSide, maxSide, { fit: 'inside', withoutEnlargement: true });
+  const { format, width, height } = await sharp(buffer).metadata();
+  const transparent = await isTransparent(buffer);
+  if ((transparent || ['png', 'gif'].includes(format)) && width * height <= LOSSLESS_MAX_PIXELS) {
+    const png = await (transparent ? sized() : sized().removeAlpha()).png().toBuffer();
+    if (png.length <= LOSSLESS_MAX_BYTES) return png;
+  }
+  return transparent
+    ? sized().webp({ quality: 92, alphaQuality: 100 }).toBuffer()
+    : sized().jpeg({ quality: 92 }).toBuffer();
+}
+
+// What an image file holds, by its first bytes: stored images are named .jpg
+// whatever they are
+function imageType(head) {
+  if (head.toString('latin1', 1, 4) === 'PNG') return 'image/png';
+  if (head.toString('latin1', 0, 4) === 'RIFF' && head.toString('latin1', 8, 12) === 'WEBP') return 'image/webp';
+  if (head.toString('latin1', 0, 3) === 'GIF') return 'image/gif';
+  return 'image/jpeg';
+}
+const IMAGE_EXT = { 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'image/jpeg': '.jpg' };
+
+function sendImageFile(res, file, cacheControl = 'no-cache') {
+  const head = Buffer.alloc(12);
+  const fd = fs.openSync(file, 'r');
+  try { fs.readSync(fd, head, 0, 12, 0); } finally { fs.closeSync(fd); }
+  res.header('Content-Type', imageType(head));
+  res.header('Cache-Control', cacheControl);
+  fs.createReadStream(file).pipe(res);
 }
 
 // Everything bound for the panel comes through here, so an image gets the
@@ -902,15 +942,14 @@ async function applyQueueEdit(buffer, edit, display = null, sizing = {}) {
   if (!edit) {
     // Sized first because sharpening is meant to happen at output resolution
     const [FW, FH] = frameDims(display);
-    const { fit, background } = fitFor(sizing);
-    if (fit !== 'fit') {
-      const sized = sharp(buffer).rotate().resize(FW, FH, { fit: fit === 'fill' ? 'cover' : 'fill' });
-      return (await adjusted(sized, adjust)).removeAlpha().jpeg({ quality: 90 }).toBuffer();
-    }
-    // Tone the art, not the bars around it
-    const inside = await (await adjusted(sharp(buffer).rotate().resize(FW, FH, { fit: 'inside' }), adjust)).removeAlpha().png().toBuffer();
+    const transparent = await isTransparent(buffer);
+    const { fit, background } = fitFor(sizing, transparent);
+    const art = await adjusted(sharp(buffer).rotate().resize(FW, FH, { fit: fit === 'fit' ? 'inside' : fit === 'fill' ? 'cover' : 'fill' }), adjust);
+    if (fit !== 'fit' && !transparent) return art.removeAlpha().jpeg({ quality: 90 }).toBuffer();
+    // Tone the art, not the background around it or showing through it
+    const layer = await (transparent ? art : art.removeAlpha()).png().toBuffer();
     return sharp({ create: { width: FW, height: FH, channels: 3, background } })
-      .composite([{ input: inside, gravity: 'centre' }])
+      .composite([{ input: layer, gravity: 'centre' }])
       .jpeg({ quality: 90 }).toBuffer();
   }
   const bg = /^#[0-9a-fA-F]{6}$/.test(edit.bg || '') ? edit.bg : '#000000';
@@ -922,9 +961,12 @@ async function applyQueueEdit(buffer, edit, display = null, sizing = {}) {
     return (await transformOnto(buffer, edit, FW, FH, adjust)).jpeg({ quality: 88 }).toBuffer();
   }
 
+  // A see-through image stays that way until it's on its background
   let buf = buffer;
-  if (rot) buf = await sharp(buf).rotate(rot, { background: bg }).jpeg({ quality: 92 }).toBuffer();
-  if (!isNeutralAdjust(adjust)) buf = await (await adjusted(sharp(buf), adjust)).removeAlpha().jpeg({ quality: 92 }).toBuffer();
+  const transparent = await isTransparent(buffer);
+  const step = (img, quality) => (transparent ? img.png() : img.removeAlpha().jpeg({ quality })).toBuffer();
+  if (rot) buf = await step(sharp(buf).rotate(rot, { background: transparent ? { r: 0, g: 0, b: 0, alpha: 0 } : bg }), 92);
+  if (!isNeutralAdjust(adjust)) buf = await step(await adjusted(sharp(buf), adjust), 92);
 
   if (mode === 'crop') {
     const c = edit.crop;
@@ -934,14 +976,16 @@ async function applyQueueEdit(buffer, edit, display = null, sizing = {}) {
       const top = Math.max(0, Math.min(Math.round(c.y), meta.height - 1));
       const width = Math.max(1, Math.min(Math.round(c.width), meta.width - left));
       const height = Math.max(1, Math.min(Math.round(c.height), meta.height - top));
-      buf = await sharp(buf).extract({ left, top, width, height }).jpeg({ quality: 88 }).toBuffer();
+      buf = await step(sharp(buf).extract({ left, top, width, height }), 88);
     }
-    return buf;
+    // What goes out is always a JPEG
+    if ((await sharp(buf).metadata()).format === 'jpeg') return buf;
+    return sharp(buf).flatten({ background: bg }).jpeg({ quality: 88 }).toBuffer();
   }
 
   const [FW, FH] = frameDims(display);
   if (mode === 'stretch') {
-    return sharp(buf).resize(FW, FH, { fit: 'fill' }).jpeg({ quality: 88 }).toBuffer();
+    return sharp(buf).flatten({ background: bg }).resize(FW, FH, { fit: 'fill' }).jpeg({ quality: 88 }).toBuffer();
   }
 
 
@@ -1471,6 +1515,9 @@ app.put('/api/displays/:id', (req, res) => {
   const displays = loadDisplays();
   const idx = displays.findIndex(d => d.id === findDisplay(req.params.id)?.id);
   if (idx === -1) return res.status(404).json({ error: 'Display not found' });
+  if (req.body.upRotation !== undefined && ![0, 90, 180, 270].includes(req.body.upRotation)) {
+    return res.status(400).json({ error: 'upRotation must be 0, 90, 180 or 270' });
+  }
 
   for (const key of ['name', 'host', 'pin', 'mac', 'sleepAfter', 'canvasX', 'canvasY', 'canvasWidth', 'canvasHeight', 'rotation', 'upRotation', 'upLocked', 'sceneId', 'quad', 'plane']) {
     if (req.body[key] !== undefined) displays[idx][key] = req.body[key];
@@ -1857,8 +1904,8 @@ const parseJsonField = (value, name) => {
   try { return JSON.parse(value); } catch { throw new RequestError(`${name} must be JSON`); }
 };
 
-// The image a request carries, as a JPEG in its own orientation: an uploaded
-// `image` file, a `url` to download, a library item (`gallery`, as
+// The image a request carries, in its own orientation (see normalizeImage): an
+// uploaded `image` file, a `url` to download, a library item (`gallery`, as
 // "category/file.jpg") or `base64` (plain or a data: URL). null when none.
 async function imageFromRequest(req) {
   const body = req.body ?? {};
@@ -1944,9 +1991,7 @@ app.get('/api/displays/:displayId/last-image', resolveDisplay, (req, res) => {
 app.get('/api/displays/:displayId/current-source', resolveDisplay, (req, res) => {
   const p = currentSourcePath(req.params.displayId);
   if (!fs.existsSync(p)) return res.status(404).end();
-  res.header('Content-Type', 'image/jpeg');
-  res.header('Cache-Control', 'no-cache');
-  fs.createReadStream(p).pipe(res);
+  sendImageFile(res, p);
 });
 
 app.get('/api/displays/:displayId/current-edit', resolveDisplay, (req, res) => {
@@ -2170,10 +2215,10 @@ app.post('/api/displays/:displayId/queue', resolveDisplay, upload.single('image'
   const displayId = req.params.displayId;
   ensureDisplayDir(displayId);
   const id = randomUUID();
-  const filename = `${id}.jpg`;
-  // Normalize arbitrary uploads (PNG/HEIC/EXIF-rotated) to a clean JPEG in the
-  // file's own orientation; presentation overrides live in `edit`
-  const buffer = await sharp(req.file.buffer).rotate().jpeg({ quality: 88 }).toBuffer().catch(() => req.file.buffer);
+  // Stored in the file's own orientation (see normalizeImage); presentation
+  // overrides live in `edit`
+  const buffer = await normalizeImage(req.file.buffer).catch(() => req.file.buffer);
+  const filename = `${id}${IMAGE_EXT[imageType(buffer)]}`;
   fs.writeFileSync(path.join(displayImagesDir(displayId), filename), buffer);
   const queue = loadDisplayQueue(displayId);
   queue.images.push({ id, filename, addedAt: new Date().toISOString(), edit: null });
@@ -2225,17 +2270,17 @@ app.get('/api/displays/:displayId/queue/image/:imageId', resolveDisplay, async (
   if (!entry) return res.status(404).json({ error: 'Not found' });
   const imgPath = path.join(displayImagesDir(displayId), entry.filename);
   if (!fs.existsSync(imgPath)) return res.status(404).json({ error: 'Image file missing' });
-  res.header('Content-Type', 'image/jpeg');
-  res.header('Cache-Control', 'public, max-age=86400');
   // ?edited=1 → preview with the presentation override applied (cache-bust
   // with the entry's editedAt when requesting)
   if (req.query.edited === '1' && entry.edit) {
     try {
       const buf = await applyQueueEdit(fs.readFileSync(imgPath), entry.edit, req.display);
+      res.header('Content-Type', 'image/jpeg');
+      res.header('Cache-Control', 'public, max-age=86400');
       return res.send(buf);
     } catch { /* fall through to the raw file */ }
   }
-  fs.createReadStream(imgPath).pipe(res);
+  sendImageFile(res, imgPath, 'public, max-age=86400');
 });
 
 // Presentation override for a queued image: how it should be displayed.
@@ -2298,6 +2343,30 @@ app.post('/api/displays/:displayId/push-edit', resolveDisplay, handle(async (req
   const rendered = await applyQueueEdit(fs.readFileSync(currentSourcePath(displayId)), edit, req.display, opts);
   setCurrentEdit(displayId, edit);
   sendOutcome(res, await deliver(displayId, rendered, { ...opts, label: 'Edited image', source: 'edit' }));
+}));
+
+// Sends the image the display shows once more, as it was laid out: after it's
+// been turned the other way up, say. Takes the send options.
+app.post('/api/displays/:displayId/resend', resolveDisplay, handle(async (req, res) => {
+  const displayId = req.params.displayId;
+  const opts = sendOptions(req.body);
+  // Never in place of a newer image. One that's waiting goes out the way the
+  // display is set by then.
+  const waiting = loadDelivery(displayId);
+  const last = getDisplayLastImagePath(displayId);
+  const again = () => deliver(displayId, fs.readFileSync(last), { ...opts, label: 'Current image', source: 'push' });
+  if (waiting?.state === 'sending') {
+    // It left before this was asked for, so it's sent again once it's there.
+    // If it doesn't get there, its retry goes out the way the display is set by then.
+    (deliveryRuns.get(displayId) ?? Promise.resolve()).then(() => setTimeout(() => {
+      if (getDisplay(displayId) && !loadDelivery(displayId) && fs.existsSync(last)) again();
+    }, 1_000));
+    return sendOutcome(res, { state: 'queued', delivery: publicDelivery(waiting), message: "It's sent again once the image on its way is there" });
+  }
+  if (waiting?.state === 'failed') throw new RequestError('An image for it is stopped. Retry or cancel that one first.', 409);
+  if (waiting) return sendOutcome(res, { state: 'queued', delivery: publicDelivery(waiting), message: 'The image waiting for it goes out that way' });
+  if (!fs.existsSync(last)) throw new RequestError('Nothing has been sent to it yet', 404);
+  sendOutcome(res, await again());
 }));
 
 // ─── Display groups: one image spanned across several displays ──────────────
@@ -2456,9 +2525,7 @@ app.get('/api/groups/:id/source', (req, res) => {
   const group = findGroup(req.params.id);
   const p = group && groupSourcePath(group.id);
   if (!p || !fs.existsSync(p)) return res.status(404).end();
-  res.header('Content-Type', 'image/jpeg');
-  res.header('Cache-Control', 'no-cache');
-  fs.createReadStream(p).pipe(res);
+  sendImageFile(res, p);
 });
 
 // Spans an image across the group's displays and sends every slice at once.
@@ -2485,7 +2552,7 @@ app.post('/api/groups/:id/span', upload.single('image'), handle(async (req, res)
   if (edit) edit = sanitizeEdit(edit);
   else if (sent) {
     const { width, height } = await sharp(sent.image).metadata();
-    const { background } = fitFor(opts);
+    const { background } = fitFor(opts, await isTransparent(sent.image));
     edit = sanitizeEdit({ ...sizedEdit(width, height, layout.width, layout.height, opts.fit ?? 'fill', background), adjust: opts.profile ? profileAdjust(opts.profile) : undefined });
   } else edit = group.span?.edit ? sanitizeEdit(group.span.edit) : null;
   if (!edit) throw new RequestError('Send an image to span');
@@ -2591,25 +2658,28 @@ app.get('/api/gallery/image/:category/:file', async (req, res) => {
   const { category, file } = req.params;
   const imgPath = galleryFilePath(`${category}/${file}`);
   if (!imgPath) return res.status(galleryPart(category) && galleryPart(file) ? 404 : 400).end();
-  res.header('Content-Type', 'image/jpeg');
-  res.header('Cache-Control', 'public, max-age=604800');
+  const cache = 'public, max-age=604800';
   const w = parseInt(req.query.w, 10);
   if (Number.isFinite(w) && w > 0 && w <= 1200) {
-    const thumbPath = path.join(GALLERY_THUMBS, category, `${file}.w${w}.jpg`);
+    // A JPEG can't be see-through; the others get thumbnails that can
+    const jpeg = /\.jpe?g$/i.test(file);
+    const thumbPath = path.join(GALLERY_THUMBS, category, `${file}.w${w}.${jpeg ? 'jpg' : 'webp'}`);
     try {
       if (!fs.existsSync(thumbPath)) {
         fs.mkdirSync(path.dirname(thumbPath), { recursive: true });
-        await sharp(imgPath).rotate().resize({ width: w }).jpeg({ quality: 78 }).toFile(thumbPath);
+        const thumb = sharp(imgPath).rotate().resize({ width: w });
+        await (jpeg ? thumb.jpeg({ quality: 78 }) : thumb.webp({ quality: 82 })).toFile(thumbPath);
       }
-      return fs.createReadStream(thumbPath).pipe(res);
+      return sendImageFile(res, thumbPath, cache);
     } catch { /* fall through to the original */ }
   }
-  fs.createReadStream(imgPath).pipe(res);
+  sendImageFile(res, imgPath, cache);
 });
 
 // Adds artwork to the library. Multipart: one or more `images` files and an
-// optional `category` (any text; "uploads" when left out). Each is stored as
-// a JPEG named after its file. Answers { items } with the new pieces.
+// optional `category` (any text; "uploads" when left out). Each is named after
+// its file and stored as normalizeImage leaves it: a JPEG, or a PNG or WebP.
+// Answers { items } with the new pieces.
 const uploadArtwork = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024, files: 20 } });
 app.post('/api/gallery', uploadArtwork.array('images', 20), handle(async (req, res) => {
   const files = req.files ?? [];
@@ -2623,8 +2693,9 @@ app.post('/api/gallery', uploadArtwork.array('images', 20), handle(async (req, r
     try { image = await normalizeImage(f.buffer); }
     catch { failed.push(f.originalname); continue; }
     const base = slug(path.parse(f.originalname || '').name, 'artwork');
-    let name = `${base}.jpg`;
-    for (let n = 2; galleryFilePath(`${category}/${name}`); n++) name = `${base}-${n}.jpg`;
+    const ext = IMAGE_EXT[imageType(image)];
+    let name = `${base}${ext}`;
+    for (let n = 2; galleryFilePath(`${category}/${name}`); n++) name = `${base}-${n}${ext}`;
     fs.writeFileSync(path.join(dir, name), image);
     added.push({ id: `${category}/${name}`, category, file: name, title: galleryTitle(name), uploaded: true });
   }
@@ -2664,7 +2735,7 @@ app.post('/api/displays/:displayId/queue/from-gallery', resolveDisplay, (req, re
     const src = galleryFilePath(gid);
     if (!src) continue;
     const id = randomUUID();
-    const filename = `${id}.jpg`;
+    const filename = `${id}${path.extname(src).toLowerCase()}`;
     fs.copyFileSync(src, path.join(displayImagesDir(displayId), filename));
     queue.images.push({ id, filename, addedAt: new Date().toISOString(), edit: null, source: gid });
     added++;

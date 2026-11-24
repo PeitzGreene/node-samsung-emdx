@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0
+
+- Transparent PNG, WebP and GIF images keep their transparency instead of turning black, in sends, queues, the library and spans. The background color shows through: choose it in the designer (white to start with), in Settings → Images, or per send
+- PNGs are kept lossless, so text and line art stay crisp until they're sent
+- **Upside down** in a display's settings, for one hung the other way up. It works while the display is asleep, and sends the current image again that way
+- How to raise NGINX's upload limit when sending fails with "HTTP 413"
+
 ## 1.2.0
 
 - Settings on the add-on's Configuration tab: the app's port, the artwork folder, and optionally this machine's IP address, time zone, default look, image fit, bar color and clock sync. Ones set there show as locked in the app

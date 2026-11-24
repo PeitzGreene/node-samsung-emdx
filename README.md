@@ -11,13 +11,14 @@ A browser-based UI for designing images and sending them to the display.
 - Every image gets the E-ink profile unless you choose otherwise, including queued images and image feeds. Change the default under Settings → Images
 - Vivid, B&W and Original profiles, plus brightness, contrast, saturation, midtones and sharpening controls
 - Fit, fill or stretch, resize from the corners (⇧ to stretch freely) or stretch one way from the sides, snap to center and edges, rotate, corner radius, borders, and backgrounds in the panel's own solid colors
+- Transparent PNG, WebP and GIF images keep their transparency, with the background color you choose showing through (white to start with)
 - Send from anywhere through the designer: a new image, a queued image, or artwork from the library (**Send…**), so it can be adjusted before it goes
 - Undo and redo. Designs are saved separately, so the original image is never changed
 - Queue with schedules: several wake times a day on chosen days, or every few minutes or hours (optionally only between two times of day), from the queue or an image feed
 - Artwork library: browse it, upload your own artwork into categories, and queue it on any display
 - One image spanned across a group of displays, with their frames and gaps taken out so lines stay straight across them
 - Every image is resized to the panel's exact resolution: fit (with bars), fill (cropped) or stretch, chosen under Settings → Images or per send
-- Portrait and landscape linked between the viewer and the display
+- Portrait and landscape linked between the viewer and the display, and an **Upside down** setting for one hung the other way up
 - Wi-Fi setup over Bluetooth without Samsung's app, with [`tools/ble-setup.py`](tools/ble-setup.py) on Linux (e.g. a Raspberry Pi). See [docs/BLE.md](docs/BLE.md)
 - Sends don't give up. The app wakes a display with Wake-on-LAN in network standby. One it can't reach keeps its image waiting, which goes out as soon as the display is seen awake: its button, its own wake, or the next retry. Waiting images show on the canvas and survive a restart
 - The display's clock is checked whenever an image is sent, and put right when it's out. Each display shows its time and how far off it is
@@ -102,6 +103,21 @@ The app also runs as a Home Assistant add-on, with its web app in the sidebar (*
 3. For displays as entities and actions in automations, add the [integration](docs/HOME-ASSISTANT.md) with the address `http://127.0.0.1:3001`.
 
 The add-on uses the host's network, so scanning, Wake-on-LAN and the address displays download from all work without setup. Its **Configuration** tab sets the app's port (3001 unless you change it), the artwork folder, and optionally the address, time zone, default look, image fit, bar color and clock sync; ones set there show as locked in the app. Artwork in `/media/samsung-emdx/<category>/` shows in the library alongside uploads. More in [homeassistant-addon/DOCS.md](homeassistant-addon/DOCS.md). It runs on 64-bit Home Assistant (aarch64 or amd64).
+
+### Behind a reverse proxy
+
+If you reach Home Assistant through nginx (the **NGINX Home Assistant SSL proxy** add-on, Nginx Proxy Manager and the like), sending an image from the sidebar fails with **Couldn't send: HTTP 413**. The image is uploaded through the proxy, and nginx turns away anything over 1 MB unless told otherwise. Raise its limit to the app's own, 50 MB:
+
+- **NGINX Home Assistant SSL proxy add-on**: on its **Configuration** tab, set `customize` → `active: true` (leave `default` as `nginx_proxy_default*.conf`). Create `/share/nginx_proxy_default.conf` (with the File editor or Samba) containing:
+
+  ```nginx
+  client_max_body_size 50M;
+  ```
+
+  Then restart the NGINX add-on.
+- **Nginx Proxy Manager**: put `client_max_body_size 50M;` in the proxy host's **Advanced** tab.
+
+Opening Home Assistant by its local address (`http://homeassistant.local:8123`) goes around the proxy, so sending works there either way.
 
 ## Docker
 

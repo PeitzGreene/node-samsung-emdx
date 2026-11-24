@@ -283,7 +283,7 @@ export function GalleryPanel({ open, displays, lastImageTimestamps, activeQueueD
                   <img
                     src={`api/gallery/image/${item.id}?w=300`}
                     alt={item.title} loading="lazy"
-                    className={`w-full aspect-[0.72] object-cover transition-opacity ${isSel ? "opacity-90" : ""}`}
+                    className={`see-through w-full aspect-[0.72] object-cover transition-opacity ${isSel ? "opacity-90" : ""}`}
                   />
                   {isSel && (
                     <span className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
